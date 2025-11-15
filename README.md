@@ -15,6 +15,7 @@
 - 必备系统依赖：
   - `ffmpeg`（需包含 `libaom-av1` 编码器用于 AV1 输出）
   - 可选：`svt-av1`（若自行编译 FFmpeg 以启用 `libsvtav1`）
+- Parquet 引擎：`pyarrow` 或 `fastparquet`（必须安装其一以生成 `*.parquet`）
 
 ## 使用 Conda 管理环境（推荐）
 ```bash
@@ -27,7 +28,7 @@ conda install -c conda-forge ffmpeg -y
 ffmpeg -hide_banner -encoders | grep -i av1  # 应出现 libaom-av1
 
 # 安装常用 Python 依赖（conda 优先安装大件）
-conda install -c conda-forge numpy pandas opencv tqdm psutil matplotlib openpyxl -y
+conda install -c conda-forge numpy pandas pyarrow opencv tqdm psutil matplotlib openpyxl -y
 
 # 安装 MCAP 相关（pip）
 pip install mcap mcap-ros2-support
@@ -47,7 +48,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 pip install -U pip
-pip install mcap mcap-ros2-support numpy pandas opencv-python tqdm psutil matplotlib openpyxl
+pip install mcap mcap-ros2-support numpy pandas pyarrow opencv-python tqdm psutil matplotlib openpyxl
 ```
 - 安装系统包：
 ```bash
@@ -149,6 +150,7 @@ mov,mp4,m4a,3gp,3g2,mj2
   - 如果仍使用系统 `/usr/bin/ffmpeg`，请在激活环境后重开终端或运行 `hash -r`
 - 进度条不显示：确保 `tqdm` 已安装且 `ffprobe` 能返回源视频时长；否则转码仍会进行但不显示百分比
 - Excel 配置未提供：脚本会自动从 MCAP 探测 Topic；如需强制忽略 Excel，使用 `--no-excel`
+- 缺少 Parquet 引擎：安装 `pyarrow` 或 `fastparquet`（至少其一）。示例：`conda install -c conda-forge pyarrow -y` 或 `pip install pyarrow`。若出现 Pandas 报错 “Unable to find a usable engine”，说明未安装。
 - 相机命名：当前默认输出键为 `observation.images.<camera>`，相机名为 `head_camera`、`left_hand_camera`、`right_hand_camera`；若需自定义命名，可在后续版本中添加 CLI 参数支持
 
 ## 性能优化建议（不改变编码方式）
