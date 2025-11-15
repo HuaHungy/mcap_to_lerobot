@@ -1,4 +1,4 @@
-# MCAP 到 LeRobot v2.1 标准格式转换器（Linux 服务器版）
+# MCAP 到 LeRobot v2.1 
 
 本项目提供将 ROS2 录制的 MCAP 数据集转换为 LeRobot v2.1 训练格式的工具，支持将相机图像合成为视频（MP4 容器，AV1 编码，yuv420p 像素格式，30 FPS），并生成与训练兼容的元数据与分层目录结构。
 
