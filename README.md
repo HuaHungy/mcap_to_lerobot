@@ -49,8 +49,6 @@ source .venv/bin/activate
 pip install -U pip
 pip install mcap mcap-ros2-support numpy pandas opencv-python tqdm psutil matplotlib openpyxl
 ```
-
-## 安装 FFmpeg（AV1 支持）
 - 安装系统包：
 ```bash
 sudo apt-get update
