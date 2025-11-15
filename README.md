@@ -4,17 +4,16 @@
 
 ## 特性概览
 - 统一采样频率 30 Hz，同步多模态数据
-- 图像直接写入视频，最终转码为 AV1（`libaom-av1`）以便在 Linux 上播放
+- 图像直接写入视频，最终转码为 AV1（自动选择 `libsvtav1`；不可用时回退 `libaom-av1`）
 - 支持目标分辨率：`360p (640x360)` 与 `720p (1280x720)`
-- 输出标准分层结构：`meta/`、`data/`、`videos/`
+- 输出统一写入 `--output/lerobot/` 下的标准分层结构：`meta/`、`data/`、`videos/`
 - 生成训练所需的 `info.json`、`episodes.jsonl`、`tasks.jsonl`、`episodes_stats.jsonl`
 
 ## 环境要求
 - 操作系统：Linux（建议 Ubuntu 20.04+/22.04）
 - Python：3.8 及以上
 - 必备系统依赖：
-  - `ffmpeg`（需包含 `libaom-av1` 编码器用于 AV1 输出）
-  - 可选：`svt-av1`（若自行编译 FFmpeg 以启用 `libsvtav1`）
+  - `ffmpeg`（需包含 `libaom-av1`；如包含 `libsvtav1`，会自动优先使用）
 - Parquet 引擎：`pyarrow` 或 `fastparquet`（必须安装其一以生成 `*.parquet`）
 
 ## 使用 Conda 管理环境（推荐）
@@ -25,16 +24,16 @@ conda activate mcap_to_lerobot
 
 # 安装 FFmpeg（conda-forge 渠道带 libaom-av1）
 conda install -c conda-forge ffmpeg -y
-ffmpeg -hide_banner -encoders | grep -i av1  # 应出现 libaom-av1
+ffmpeg -hide_banner -encoders | grep -i av1  # 应出现 libaom-av1 或 libsvtav1
 
 # 安装常用 Python 依赖（conda 优先安装大件）
-conda install -c conda-forge numpy pandas pyarrow opencv tqdm psutil matplotlib openpyxl -y
+conda install -c conda-forge numpy pandas pyarrow opencv tqdm psutil matplotlib -y
 
 # 安装 MCAP 相关（pip）
 pip install mcap mcap-ros2-support
 
 # 自检
-python -c "import cv2, numpy, pandas, tqdm, psutil, openpyxl; print('Conda OK')"
+python -c "import cv2, numpy, pandas, tqdm, psutil; print('Conda OK')"
 python -c "import mcap; import mcap_ros2; print('MCAP OK')"
 ```
 
@@ -48,7 +47,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 pip install -U pip
-pip install mcap mcap-ros2-support numpy pandas pyarrow opencv-python tqdm psutil matplotlib openpyxl
+pip install mcap mcap-ros2-support numpy pandas pyarrow opencv-python tqdm psutil matplotlib
 ```
 - 安装系统包：
 ```bash
@@ -65,39 +64,38 @@ ffmpeg -hide_banner -encoders | grep -i av1
 
 ## 运行示例
 ```bash
-python /home/kemove/Downloads/mcap_to_lerobot/mcap_to_lerobot_v2_1_standard_converter_linux.py \
+python mcap_to_lerobot.py \
   --input /path/to/your.mcap \
-  --output /home/kemove/Downloads/mcap_to_lerobot/test \
-  --resolution 720p
+  --output /path/to/out_dir \
+  --resolution 720p \
+  --no-plot  # 可选：不生成臂与夹爪曲线图
 ```
 
 可选参数：
-- `--excel-config <path>` 指定 Excel 配置文件；不提供时脚本会自动从 MCAP 探测 Topic 配置
-- `--no-excel` 忽略 Excel，强制自动探测 Topic
 - `--max-duration <seconds>` 限制最大处理时长（秒），默认 0 表示处理完整文件
 - `--resolution {360p,720p}` 指定目标分辨率，默认 `720p`
-
-入口参数与流程参考：`mcap_to_lerobot_v2_1_standard_converter_linux.py:4059-4096`、`main()`
+- `--no-plot` 不生成臂与夹爪曲线图
 
 ## 输出目录结构
-转换成功后，`--output` 指定目录下将生成：
+转换成功后，`--output` 下的 `lerobot/` 目录中将生成：
 ```
-meta/
-  info.json
-  episodes.jsonl
-  tasks.jsonl
-  episodes_stats.jsonl
-  camera.json          # 若源目录存在则复制；否则跳过
+lerobot/
+  meta/
+    info.json
+    episodes.jsonl
+    tasks.jsonl
+    episodes_stats.jsonl
+    camera.json          # 若源目录存在则复制；否则跳过
 
-data/
-  chunk-000/
-    episode_000000.parquet
+  data/
+    chunk-000/
+      episode_000000.parquet
 
-videos/
-  chunk-000/
-    observation.images.head_camera/episode_000000.mp4
-    observation.images.left_hand_camera/episode_000000.mp4
-    observation.images.right_hand_camera/episode_000000.mp4
+  videos/
+    chunk-000/
+      observation.images.camera_head_rgb/episode_000000.mp4
+      observation.images.camera_left_wrist_rgb/episode_000000.mp4
+      observation.images.camera_right_wrist_rgb/episode_000000.mp4
 ```
 - 视频容器：MP4（`mov,mp4`）
 - 视频编码：AV1（`codec_name=av1`，`libaom-av1`）
@@ -105,9 +103,7 @@ videos/
 - 帧率：`30 FPS`
 - 分辨率：与 `--resolution` 一致（默认 `1280x720`）
 
-视频写入与转码逻辑参考：
-- 写入占位编码并生成容器：`mcap_to_lerobot_v2_1_standard_converter_linux.py:1455-1474`、`create_mp4_videos()`（`1594-1629`）
-- AV1 转码（含进度条）：`mcap_to_lerobot_v2_1_standard_converter_linux.py:1477-1552`
+视频写入与转码：自动选择编码器（`libsvtav1` 优先，`libaom-av1` 回退），像素格式 `yuv420p`，帧率 30 FPS。
 
 ## 验证输出为 AV1
 ```bash
@@ -130,16 +126,10 @@ mov,mp4,m4a,3gp,3g2,mj2
 ```
 
 ## 工作流程概览
-- 读取 MCAP 并提取消息，优先使用 ROS `header.stamp` 时间戳，回退到 `log_time`（稳定对齐）
-- 解码 `sensor_msgs/CompressedImage` 为帧（BGR），统一缩放到目标分辨率（`1204`）
-- 逐帧写入占位视频，写完后用 FFmpeg 转码为 AV1（`1477-1552`）
-- 构建训练数据行并生成 Parquet 与元数据（`generate_lerobot_v21_dataset`）
-
-关键实现位置：
-- 图像解码与缩放：`mcap_to_lerobot_v2_1_standard_converter_linux.py:1204`
-- 视频写入与转码：`mcap_to_lerobot_v2_1_standard_converter_linux.py:1455-1474`、`1477-1552`、`1617-1629`、`3474-3491`
-- 元数据生成：`mcap_to_lerobot_v2_1_standard_converter_linux.py:2104-2134`、`2211-2269`、`2363-2449`、`2451-2596`
-- 命令行入口：`mcap_to_lerobot_v2_1_standard_converter_linux.py:4059-4121`
+- 读取 MCAP 并提取消息，优先使用 ROS `header.stamp` 时间戳，回退到 `log_time`
+- 解码 `sensor_msgs/CompressedImage` 为帧（BGR），统一缩放到目标分辨率
+- 写入视频并转码为 AV1（编码器自动选择）
+- 构建训练数据行并生成 Parquet 与元数据（LeRobot v2.1）
 
 ## 常见问题与排查
 - 缺少 `ffmpeg` 或不含 AV1 编码器：
@@ -154,8 +144,8 @@ mov,mp4,m4a,3gp,3g2,mj2
 - 相机命名：当前默认输出键为 `observation.images.<camera>`，相机名为 `head_camera`、`left_hand_camera`、`right_hand_camera`；若需自定义命名，可在后续版本中添加 CLI 参数支持
 
 ## 性能优化建议（不改变编码方式）
-- 默认使用 `libaom-av1` 并开启多线程：内部启用了 `-threads <CPU>` 与 `-cpu-used 8`
-- 如需更快：提高 `cpu-used`（内部固定 8），或使用更高性能的 FFmpeg 构建（启用 `libsvtav1`）
+- 自动选择 `libsvtav1`（更快）或回退 `libaom-av1`，并开启多线程
+- 如需更快：在 FFmpeg 启用 `libsvtav1`；或提高 `cpu-used`（`libaom-av1`）
 - 如需更小体积：提高 `crf`（例如 32），会略微牺牲画质
 
 ## 许可与版权

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-MCAP 到 LeRobot v2.1 标准格式转换器 - Linux 服务器版本
-================================================================================
+MCAP 到 LeRobot v2.1 标准格式转换器
 
 📹 支持360p和720p分辨率 - 可通过 --resolution 参数选择（默认720p: 1280x720）
 在流式写入视频时实时缩放到目标分辨率，减少存储空间和训练加载时间
@@ -15,7 +14,7 @@ MCAP 到 LeRobot v2.1 标准格式转换器 - Linux 服务器版本
 6. LeRobot v2.1 标准格式输出（MP4视频 + 分层目录）
 7. 数据质量评估报告
 8. 主臂、从臂和夹爪曲线图绘制
-9. ⭐ 视频实时缩放到目标分辨率（支持360p/720p，通过--resolution参数选择）
+9. 视频实时缩放到目标分辨率（支持360p/720p，通过--resolution参数选择）
 
 LeRobot v2.1 标准特性:
 - MP4 视频格式（替代JPG图像）
@@ -23,13 +22,15 @@ LeRobot v2.1 标准特性:
 - 每集一个Parquet文件（episode_XXXXXX.parquet）
 - 每集每相机一个MP4文件
 - 完整的元数据（info.json, episodes.jsonl, tasks.jsonl, episodes_stats.jsonl）
-/mnt/nas/synnas/docker2/外部数据/外来睿尔曼2000条/GroceryStore_Restrocking_Fallen/GroceryStore_Restrocking_Fallen_20251012_102643_192_168_10_124/GroceryStore_Restrocking_Fallen_20251012_102643_192_168_10_124_0.mcap
+
 使用方法:
-python /home/kemove/Downloads/mcap_to_lerobot/mcap_to_lerobot_v2_1_standard_converter_linux.py \
-  --input /mnt/nas/synnas/docker2/外部数据/外来睿尔曼2000条/GroceryStore_Restrocking_Fallen/GroceryStore_Restrocking_Fallen_20251012_102643_192_168_10_124/GroceryStore_Restrocking_Fallen_20251012_102643_192_168_10_124_0.mcap \
-  --output /home/kemove/Downloads/mcap_to_lerobot/test \
-  --resolution 720p
-================================================================================
+python mcap_to_lerobot.py \
+  --input /mnt/nas/synnas/docker2/外部数据/外来睿尔曼2000条/GroceryStore_Restrocking_Fallen \
+  --output /home/kemove/mcap_to_lerobot/test1 \
+  --ffmpeg-threads 32 \
+  --ffmpeg-cpu-used 8 \
+  --resolution 720p \
+  --no-plot
 """
 
 import sys
@@ -45,7 +46,6 @@ from collections import defaultdict
 from dataclasses import dataclass, asdict
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
-import openpyxl
 import gc
 import os
 import shutil
@@ -167,26 +167,23 @@ class ConversionReport:
 class MCAPToLeRobotV21StandardConverter:
     """MCAP 到 LeRobot v2.1 标准格式转换器 - Linux 服务器优化版本"""
 
-    def __init__(self, mcap_file_path: str, output_dir: str, excel_config_path: Optional[str] = "mcap_topic.xlsx", 
+    def __init__(self, mcap_file_path: str, output_dir: str, 
                  max_duration: int = 0, resolution: str = '720p'):
         """初始化转换器
         
         Args:
             resolution: 目标分辨率，支持 '360p' (640x360) 或 '720p' (1280x720)
-            excel_config_path: Excel配置文件路径，None表示不使用Excel，改为从MCAP自动探测Topic
         """
         # 归一化路径：兼容 Windows 风格反斜杠，统一为 POSIX
         self.mcap_file_path = Path(str(mcap_file_path).replace('\\', '/')).resolve()
         # 同时提供 self.input_path 别名，便于外部调用保持一致
         self.input_path = self.mcap_file_path
         self.output_dir = Path(str(output_dir).replace('\\', '/')).resolve()
-        # 允许 excel_config_path 为 None
-        self.excel_config_path = Path(str(excel_config_path).replace('\\', '/')).resolve() if excel_config_path else None
         self.max_duration = max_duration
         # 初始化日志输出
-        print(f"[Init] Input: {self.input_path.as_posix()}")
-        print(f"[Init] Output: {self.output_dir.as_posix()}")
-        print(f"[Init] Excel: {(self.excel_config_path.as_posix() if self.excel_config_path else 'None')}")
+        # print(f"[Init] Input: {self.input_path.as_posix()}")
+        # print(f"[Init] Output: {self.output_dir.as_posix()}")
+        
         
         # 设置目标分辨率
         if resolution == '720p':
@@ -228,79 +225,15 @@ class MCAPToLeRobotV21StandardConverter:
             'gc_counts': []
         }
 
-        print(f"初始化 LeRobot v2.1 标准转换器:")
-        print(f"  输入文件: {self.mcap_file_path}")
-        print(f"  输出目录: {self.output_dir}")
-        print(f"  配置文件: {self.excel_config_path if self.excel_config_path else '自动探测(MCAP)'}")
-        print(f"  统一目标频率: {TARGET_FREQUENCY} Hz")
-        print(f"  目标分辨率: {self.resolution_name} ({self.target_width}x{self.target_height})")
-        print(f"  最大处理时长: {max_duration} 秒")
+        print(f"开始转换 [{self.resolution_name},{TARGET_FREQUENCY}Hz]: {self.mcap_file_path.name}")
         
-        # 加载 Topic 配置
-        if self.excel_config_path is not None:
-            self.load_topic_configs_from_excel()
-        else:
-            print("未提供 Excel 配置，改为从 MCAP 自动探测 Topic 配置。")
-            self.discover_topic_configs_from_mcap()
+        # 加载 Topic 配置（不再支持Excel，直接从MCAP自动探测）
+        self.discover_topic_configs_from_mcap()
 
-    def load_topic_configs_from_excel(self):
-        """从Excel文件加载topic配置；若Excel未提供或不存在，则自动从MCAP探测Topic配置"""
-        print(f"\n从Excel文件加载topic配置: {self.excel_config_path}")
-        
-        try:
-            # 若未提供Excel或文件不存在，改为自动探测
-            if self.excel_config_path is None or not Path(self.excel_config_path).exists():
-                print("Excel配置未提供或不存在，改为从MCAP自动探测Topic配置")
-                self.discover_topic_configs_from_mcap()
-                return
-            
-            # 使用 openpyxl 读取，避免 pandas 兼容性问题
-            workbook = openpyxl.load_workbook(self.excel_config_path)
-            worksheet = workbook.active
-            
-            # 读取表头
-            headers = [cell.value for cell in worksheet[1]]
-            print(f"Excel表头: {headers}")
-            
-            # 读取数据行
-            for row in worksheet.iter_rows(min_row=2, values_only=True):
-                if not row[0]:  # 跳过空行
-                    continue
-                    
-                topic_name = str(row[0])
-                datatype = str(row[1]) if row[1] else "unknown"
-                message_count = int(row[2]) if row[2] else 0
-                
-                # 处理频率字段，提取数字部分
-                freq_str = str(row[3]) if row[3] else "30"
-                if 'Hz' in freq_str:
-                    freq_str = freq_str.replace('Hz', '').strip()
-                frequency = float(freq_str) if freq_str else 30.0
-                
-                description = str(row[4]) if row[4] else ""
-                detection_dimension = str(row[5]) if row[5] else ""
-                
-                self.topic_configs[topic_name] = TopicConfig(
-                    name=topic_name,
-                    datatype=datatype,
-                    frequency=frequency,
-                    description=description,
-                    detection_dimension=detection_dimension,
-                    message_count=message_count
-                )
-            
-            print(f"成功加载 {len(self.topic_configs)} 个topic配置")
-            for topic_name, config in self.topic_configs.items():
-                print(f"  {topic_name}: {config.frequency}Hz - {config.description}")
-                
-        except Exception as e:
-            print(f"加载Excel配置文件失败: {e}")
-            print("尝试从MCAP自动探测Topic配置...")
-            self.discover_topic_configs_from_mcap()
+    # Excel 加载功能已移除
 
     def discover_topic_configs_from_mcap(self):
         """从MCAP自动探测Topic配置（不解码消息，显著加速，并提供进度条）"""
-        print("\n从MCAP自动探测topic配置...")
         topic_stats = {}
 
         try:
@@ -356,15 +289,15 @@ class MCAPToLeRobotV21StandardConverter:
                 message_count=s["count"],
             )
 
-        print(f"自动探测到 {len(self.topic_configs)} 个topic配置")
+        # print(f"检测到 {len(self.topic_configs)} 个topic")
         # 打印部分示例
         for t in list(self.topic_configs.keys())[:10]:
             tc = self.topic_configs[t]
-            print(f"  - {tc.name}: {tc.frequency:.2f} Hz, count={tc.message_count}, type={tc.datatype}")
+            # print(f"  - {tc.name}: {tc.frequency:.2f} Hz, count={tc.message_count}, type={tc.datatype}")
 
     def load_topic_configs_from_mcap(self):
         """从 MCAP 自动探测 Topic，估算频率与消息统计（快速扫描，不解码）"""
-        print("\n从MCAP自动探测topic配置(快速简化版)...")
+        print("\n扫描MCAP(简化)...")
         topic_stats = {}
         try:
             total_size = self.mcap_file_path.stat().st_size
@@ -412,7 +345,7 @@ class MCAPToLeRobotV21StandardConverter:
                 message_count=s["count"],
             )
 
-        print(f"自动探测到 {len(self.topic_configs)} 个Topic。示例：")
+        print(f"检测到 {len(self.topic_configs)} 个Topic")
         for t in list(self.topic_configs.keys())[:10]:
             tc = self.topic_configs[t]
             print(f"  - {tc.name}: {tc.frequency:.2f} Hz, count={tc.message_count}, type={tc.datatype}")
@@ -779,7 +712,7 @@ class MCAPToLeRobotV21StandardConverter:
             # 监控内存使用
             memory_usage = psutil.Process().memory_info().rss / (1024**3)
             self.performance_stats['memory_usage'].append(memory_usage)
-            print(f"  批次 {batch_idx + 1} 完成，内存使用: {memory_usage:.2f} GB")
+            
             
             # 更积极地清理内存
             if memory_usage > 2.0:  # 超过2GB就清理
@@ -948,18 +881,13 @@ class MCAPToLeRobotV21StandardConverter:
                 return batch_data
             
             print(f"    从内存中提取了 {filtered_count} 条消息")
-            print(f"    时间戳范围: {start_time:.2f}s - {end_time:.2f}s")
+            
             
             # 智能图像对齐策略 - 只处理RGB图像，排除深度图像
             image_topics = [topic for topic in batch_messages.keys() if 'image' in topic and 'depth' not in topic]
             
-            # 调试信息
-            print(f"    批次中的topic数量: {len(batch_messages)}")
-            print(f"    检测到的图像topic: {image_topics}")
-            if image_topics:
-                for topic in image_topics:
-                    print(f"      {topic}: {len(batch_messages[topic])} 个消息")
-            
+            # 调试信息（已移除详尽打印）
+
             if image_topics:
                 # 检测图像频率并选择对齐策略
                 primary_image_topic = image_topics[0]
@@ -983,7 +911,7 @@ class MCAPToLeRobotV21StandardConverter:
                 # 如果没有图像topic，使用30Hz网格
                 target_timestamps = np.linspace(start_time, end_time, 
                                               int((end_time - start_time) * TARGET_FREQUENCY))
-                print(f"  未找到图像topic，使用30Hz网格对齐 ({len(target_timestamps)} 帧)")
+                
                 use_image_timestamps = False
             
             # 插值批次数据 - 根据策略处理图像和其他数据
@@ -1064,9 +992,9 @@ class MCAPToLeRobotV21StandardConverter:
                     batch_timestamps[topic_name].append(relative_timestamp)
                     filtered_count += 1
                 
-                print(f"    处理了 {message_count} 条消息，过滤后 {filtered_count} 条")
+                
                 print(f"    时间戳范围: {start_time:.2f}s - {end_time:.2f}s")
-                print(f"    相对时间戳范围: {relative_timestamp:.2f}s (最后一条消息)")
+                
                 
                 # 智能图像对齐策略 - 只处理RGB图像，排除深度图像
                 image_topics = [topic for topic in batch_messages.keys() if 'image' in topic and 'depth' not in topic]
@@ -1459,7 +1387,7 @@ class MCAPToLeRobotV21StandardConverter:
             fourcc = cv2.VideoWriter_fourcc(*code)
             vw = cv2.VideoWriter(str(out_path), fourcc, fps, (width, height))
             if vw.isOpened():
-                print(f"[Video] 使用占位编码 {code} 写入: {out_path}")
+                # print(f"[Video] 使用占位编码 {code} 写入: {out_path}")
                 return vw, code, out_path
 
         # 回退到 MJPG/AVI（环境不支持 mp4v 时）
@@ -1501,24 +1429,48 @@ class MCAPToLeRobotV21StandardConverter:
             out_path = p.with_name(p.stem + "_av1.mp4")
             final_path = out_path
 
+        ffmpeg_threads_env = os.environ.get("FFMPEG_THREADS")
+        try:
+            ffmpeg_threads = int(ffmpeg_threads_env) if ffmpeg_threads_env else 0
+        except Exception:
+            ffmpeg_threads = 0
+        cpu_used_env = os.environ.get("FFMPEG_CPU_USED")
+        try:
+            cpu_used_val = int(cpu_used_env) if cpu_used_env is not None else cpu_used
+        except Exception:
+            cpu_used_val = cpu_used
+
+        encoder = "libaom-av1"
+        try:
+            enc_probe = subprocess.run([
+                "ffmpeg", "-hide_banner", "-encoders"
+            ], capture_output=True, text=True, check=False)
+            if enc_probe.returncode == 0 and "libsvtav1" in enc_probe.stdout:
+                encoder = "libsvtav1"
+        except Exception:
+            pass
+
         cmd = [
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
             "-i", str(p),
             "-map", "0:v:0",
-            "-c:v", "libaom-av1",
+            "-c:v", encoder,
             "-crf", str(crf),
             "-b:v", "0",
-            "-cpu-used", str(cpu_used),
+            "-cpu-used", str(cpu_used_val),
             "-pix_fmt", pix_fmt,
             "-movflags", "+faststart",
-            "-threads", str(psutil.cpu_count() or 1),
-            "-progress", "pipe:1",
         ]
+        if ffmpeg_threads > 0:
+            cmd.extend(["-threads", str(ffmpeg_threads)])
+        else:
+            cmd.extend(["-threads", str(psutil.cpu_count() or 1)])
+        cmd.extend(["-progress", "pipe:1"])
         if fps:
             cmd.extend(["-r", str(fps)])
         cmd.append(str(out_path))
 
-        print(f"自动转码为 AV1 (libaom-av1) MP4: {p} -> {out_path}")
+        # print(f"自动转码为 AV1 ({encoder}) MP4: {p} -> {out_path}")
         try:
             duration_s = None
             try:
@@ -1553,7 +1505,7 @@ class MCAPToLeRobotV21StandardConverter:
                 if p.suffix.lower() == ".mp4":
                     try:
                         out_path.replace(final_path)
-                        print(f"转码完成并覆盖原文件: {final_path}")
+                        # print(f"转码完成并覆盖原文件: {final_path}")
                     except Exception as e:
                         print(f"覆盖原文件失败: {final_path} -> {e}")
                         return None
@@ -1561,7 +1513,15 @@ class MCAPToLeRobotV21StandardConverter:
                     print(f"转码完成: {final_path}")
                 return final_path
             else:
-                print(f"libaom-av1 转码失败({ret}): {p}")
+                err = ""
+                try:
+                    if proc.stderr:
+                        err = proc.stderr.read() or ""
+                except Exception:
+                    err = ""
+                print(f"AV1 转码失败({ret}): {p}")
+                if err:
+                    print(err[-2000:])
                 return None
         except Exception as e:
             print(f"转码异常: {p} -> {e}")
@@ -1663,9 +1623,9 @@ class MCAPToLeRobotV21StandardConverter:
 
         # 创建MP4视频（使用新的写入接口）
         camera_mapping = {
-            "/camera_head/color/image_raw/compressed": "head_camera",
-            "/camera_left/color/image_raw/compressed": "left_hand_camera",
-            "/camera_right/color/image_raw/compressed": "right_hand_camera"
+            "/camera_head/color/image_raw/compressed": "camera_head_rgb",
+            "/camera_left/color/image_raw/compressed": "camera_left_wrist_rgb",
+            "/camera_right/color/image_raw/compressed": "camera_right_wrist_rgb"
         }
         synchronized_images = {}
         for topic_name, camera_name in camera_mapping.items():
@@ -2124,16 +2084,14 @@ class MCAPToLeRobotV21StandardConverter:
         parquet_path = data_chunk_dir / "episode_000000.parquet"
         df.to_parquet(parquet_path, index=False)
 
-        print(f"  保存数据文件: {parquet_path}")
-        print(f"  数据行数: {len(df)}")
-        print(f"  数据列数: {len(df.columns)}")
+        # print(f"  保存数据文件: {parquet_path}")
+        # print(f"  数据行数: {len(df)}")
+        # print(f"  数据列数: {len(df.columns)}")
 
         return df, video_info
 
     def generate_meta_files(self, df, video_info):
         """生成元数据文件 - LeRobot v2.1标准"""
-        print("\n生成元数据文件...")
-
         # 1. 生成 info.json (V2.1标准) - 完全符合LeRobot训练要求
         info = {
             "codebase_version": "v2.1",
@@ -2157,7 +2115,7 @@ class MCAPToLeRobotV21StandardConverter:
         info_path = self.meta_dir / "info.json"
         with open(info_path, 'w', encoding='utf-8') as f:
             json.dump(info, f, indent=2, ensure_ascii=False)
-        print(f"  保存 info.json: {info_path}")
+        # print(f"  保存 info.json: {info_path}")
 
         # 2. 生成 episodes.jsonl (V2.1标准)
         # 根据实际视频信息构建episodes条目（支持编码器回退后的扩展名）
@@ -2175,7 +2133,7 @@ class MCAPToLeRobotV21StandardConverter:
         with open(episodes_path, 'w', encoding='utf-8') as f:
             for episode in episodes_data:
                 f.write(json.dumps(episode, ensure_ascii=False) + '\n')
-        print(f"  保存 episodes.jsonl: {episodes_path}")
+        # print(f"  保存 episodes.jsonl: {episodes_path}")
 
         # 3. 生成 tasks.jsonl (V2.1标准格式)
         tasks_data = [{
@@ -2187,7 +2145,7 @@ class MCAPToLeRobotV21StandardConverter:
         with open(tasks_path, 'w') as f:
             for task in tasks_data:
                 f.write(json.dumps(task) + '\n')
-        print(f"  保存 tasks.jsonl: {tasks_path}")
+        # print(f"  保存 tasks.jsonl: {tasks_path}")
 
         # 4. 生成 episodes_stats.jsonl (V2.1标准) - LeRobot期望格式
         episode_stats = self._calculate_episode_stats(df)
@@ -2225,7 +2183,7 @@ class MCAPToLeRobotV21StandardConverter:
                     "episode_index": episode_idx,
                     "stats": stats
                 }, ensure_ascii=False) + '\n')
-        print(f"  保存 episodes_stats.jsonl: {stats_path}")
+        # print(f"  保存 episodes_stats.jsonl: {stats_path}")
 
         # 5. 复制 camera.json 文件到 meta 目录
         camera_json_src = self.mcap_file_path.parent / "camera.json"
@@ -2233,7 +2191,7 @@ class MCAPToLeRobotV21StandardConverter:
             camera_json_dst = self.meta_dir / "camera.json"
             import shutil
             shutil.copy2(camera_json_src, camera_json_dst)
-            print(f"  复制 camera.json: {camera_json_dst}")
+            # print(f"  复制 camera.json: {camera_json_dst}")
         else:
             print(f"  警告: 源文件不存在: {camera_json_src}")
 
@@ -2663,8 +2621,6 @@ class MCAPToLeRobotV21StandardConverter:
         validation_results = {
             "info_json": False,
             "episodes_jsonl": False,
-            "tasks_parquet": False,
-            "episodes_stats_jsonl": False,
             "parquet_files": False,
             "video_files": False,
             "features_format": False
@@ -2695,21 +2651,7 @@ class MCAPToLeRobotV21StandardConverter:
             else:
                 print("  ❌ episodes.jsonl 格式错误")
         
-        # 检查tasks.parquet
-        tasks_path = self.meta_dir / "tasks.parquet"
-        if tasks_path.exists():
-            import pandas as pd
-            try:
-                tasks_df = pd.read_parquet(tasks_path)
-                if not tasks_df.empty and "task_index" in tasks_df.columns:
-                    validation_results["tasks_parquet"] = True
-                    print("  ✅ tasks.parquet 格式正确")
-                else:
-                    print("  ❌ tasks.parquet 格式错误")
-            except Exception as e:
-                print(f"  ❌ tasks.parquet 读取失败: {e}")
-        else:
-            print("  ❌ tasks.parquet 文件不存在")
+        # 跳过 tasks.parquet 检查（当前项目不使用该文件）
         
         # 检查episodes_stats.jsonl
         stats_path = self.meta_dir / "episodes_stats.jsonl"
@@ -2759,10 +2701,6 @@ class MCAPToLeRobotV21StandardConverter:
         
         if validation_score >= 90:
             print("🎉 数据集完全准备好用于LeRobot训练！")
-            print(f"\n💡 训练命令示例:")
-            print(f"python -m lerobot.scripts.train \\")
-            print(f"    --config lerobot/configs/act/act_state_encoders.yaml \\")
-            print(f"    --data_dir {self.output_dir}")
         else:
             print("⚠️  数据集需要进一步调整才能用于训练")
         
@@ -2788,9 +2726,9 @@ class MCAPToLeRobotV21StandardConverter:
                 left_positions = np.array(left_positions)
                 for i in range(min(7, left_positions.shape[1])):
                     ax1.plot(left_positions[:, i], label=f'Joint {i+1}')
-                ax1.set_title('左主臂关节角度')
-                ax1.set_xlabel('时间帧')
-                ax1.set_ylabel('角度 (弧度)')
+                ax1.set_title('Left Main Arm Joint Angles')
+                ax1.set_xlabel('Frame Index')
+                ax1.set_ylabel('Angle (rad)')
                 ax1.legend()
                 ax1.grid(True)
 
@@ -2801,9 +2739,9 @@ class MCAPToLeRobotV21StandardConverter:
                 right_positions = np.array(right_positions)
                 for i in range(min(7, right_positions.shape[1])):
                     ax2.plot(right_positions[:, i], label=f'Joint {i+1}')
-                ax2.set_title('右主臂关节角度')
-                ax2.set_xlabel('时间帧')
-                ax2.set_ylabel('角度 (弧度)')
+                ax2.set_title('Right Main Arm Joint Angles')
+                ax2.set_xlabel('Frame Index')
+                ax2.set_ylabel('Angle (rad)')
                 ax2.legend()
                 ax2.grid(True)
 
@@ -2819,9 +2757,9 @@ class MCAPToLeRobotV21StandardConverter:
                 left_arm_positions = np.array(left_arm_positions)
                 for i in range(min(7, left_arm_positions.shape[1])):
                     ax3.plot(left_arm_positions[:, i], label=f'Joint {i+1}')
-                ax3.set_title('左从动臂关节角度')
-                ax3.set_xlabel('时间帧')
-                ax3.set_ylabel('角度 (弧度)')
+                ax3.set_title('Left Follower Arm Joint Angles')
+                ax3.set_xlabel('Frame Index')
+                ax3.set_ylabel('Angle (rad)')
                 ax3.legend()
                 ax3.grid(True)
 
@@ -2832,9 +2770,9 @@ class MCAPToLeRobotV21StandardConverter:
                 right_arm_positions = np.array(right_arm_positions)
                 for i in range(min(7, right_arm_positions.shape[1])):
                     ax4.plot(right_arm_positions[:, i], label=f'Joint {i+1}')
-                ax4.set_title('右从动臂关节角度')
-                ax4.set_xlabel('时间帧')
-                ax4.set_ylabel('角度 (弧度)')
+                ax4.set_title('Right Follower Arm Joint Angles')
+                ax4.set_xlabel('Frame Index')
+                ax4.set_ylabel('Angle (rad)')
                 ax4.legend()
                 ax4.grid(True)
 
@@ -2848,11 +2786,11 @@ class MCAPToLeRobotV21StandardConverter:
             left_gripper_values = [data[0] if data is not None and len(data) > 0 else 0 for data in left_gripper_data]
             right_gripper_values = [data[0] if data is not None and len(data) > 0 else 0 for data in right_gripper_data]
             
-            ax5.plot(left_gripper_values, label='左夹爪', linewidth=2)
-            ax5.plot(right_gripper_values, label='右夹爪', linewidth=2)
-            ax5.set_title('夹爪开合度')
-            ax5.set_xlabel('时间帧')
-            ax5.set_ylabel('开合度 (0-1)')
+            ax5.plot(left_gripper_values, label='Left Gripper', linewidth=2)
+            ax5.plot(right_gripper_values, label='Right Gripper', linewidth=2)
+            ax5.set_title('Gripper Opening')
+            ax5.set_xlabel('Frame Index')
+            ax5.set_ylabel('Opening (0-1)')
             ax5.legend()
             ax5.grid(True)
 
@@ -2996,9 +2934,9 @@ class MCAPToLeRobotV21StandardConverter:
                 left_positions = np.array(left_positions)
                 for i in range(min(7, left_positions.shape[1])):
                     ax1.plot(left_positions[:, i], label=f'Joint {i+1}')
-                ax1.set_title('左主臂关节角度')
-                ax1.set_xlabel('时间帧')
-                ax1.set_ylabel('角度 (弧度)')
+                ax1.set_title('Left Main Arm Joint Angles')
+                ax1.set_xlabel('Frame Index')
+                ax1.set_ylabel('Angle (rad)')
                 ax1.legend()
                 ax1.grid(True)
 
@@ -3009,9 +2947,9 @@ class MCAPToLeRobotV21StandardConverter:
                 right_positions = np.array(right_positions)
                 for i in range(min(7, right_positions.shape[1])):
                     ax2.plot(right_positions[:, i], label=f'Joint {i+1}')
-                ax2.set_title('右主臂关节角度')
-                ax2.set_xlabel('时间帧')
-                ax2.set_ylabel('角度 (弧度)')
+                ax2.set_title('Right Main Arm Joint Angles')
+                ax2.set_xlabel('Frame Index')
+                ax2.set_ylabel('Angle (rad)')
                 ax2.legend()
                 ax2.grid(True)
 
@@ -3027,9 +2965,9 @@ class MCAPToLeRobotV21StandardConverter:
                 left_arm_positions = np.array(left_arm_positions)
                 for i in range(min(7, left_arm_positions.shape[1])):
                     ax3.plot(left_arm_positions[:, i], label=f'Joint {i+1}')
-                ax3.set_title('左从动臂关节角度')
-                ax3.set_xlabel('时间帧')
-                ax3.set_ylabel('角度 (弧度)')
+                ax3.set_title('Left Follower Arm Joint Angles')
+                ax3.set_xlabel('Frame Index')
+                ax3.set_ylabel('Angle (rad)')
                 ax3.legend()
                 ax3.grid(True)
 
@@ -3040,9 +2978,9 @@ class MCAPToLeRobotV21StandardConverter:
                 right_arm_positions = np.array(right_arm_positions)
                 for i in range(min(7, right_arm_positions.shape[1])):
                     ax4.plot(right_arm_positions[:, i], label=f'Joint {i+1}')
-                ax4.set_title('右从动臂关节角度')
-                ax4.set_xlabel('时间帧')
-                ax4.set_ylabel('角度 (弧度)')
+                ax4.set_title('Right Follower Arm Joint Angles')
+                ax4.set_xlabel('Frame Index')
+                ax4.set_ylabel('Angle (rad)')
                 ax4.legend()
                 ax4.grid(True)
 
@@ -3056,11 +2994,11 @@ class MCAPToLeRobotV21StandardConverter:
             left_gripper_values = [data[0] if data is not None and len(data) > 0 else 0 for data in left_gripper_data]
             right_gripper_values = [data[0] if data is not None and len(data) > 0 else 0 for data in right_gripper_data]
             
-            ax5.plot(left_gripper_values, label='左夹爪', linewidth=2)
-            ax5.plot(right_gripper_values, label='右夹爪', linewidth=2)
-            ax5.set_title('夹爪开合度')
-            ax5.set_xlabel('时间帧')
-            ax5.set_ylabel('开合度 (0-1)')
+            ax5.plot(left_gripper_values, label='Left Gripper', linewidth=2)
+            ax5.plot(right_gripper_values, label='Right Gripper', linewidth=2)
+            ax5.set_title('Gripper Opening')
+            ax5.set_xlabel('Frame Index')
+            ax5.set_ylabel('Opening (0-1)')
             ax5.legend()
             ax5.grid(True)
 
@@ -3073,80 +3011,43 @@ class MCAPToLeRobotV21StandardConverter:
         
         print(f"  曲线图已保存: {plot_path}")
 
-    def generate_quality_report(self):
-        """生成质量评估报告"""
-        print("\n生成质量评估报告...")
 
-        report_data = {
-            "conversion_summary": {
-                "total_topics": len(self.quality_metrics),
-                "converted_frames": len(self.synchronized_data.get(list(self.synchronized_data.keys())[0], [])) if self.synchronized_data else 0,
-                "overall_quality_score": self.overall_quality_score,
-                "processing_time": sum(self.performance_stats['processing_times']),
-                "max_memory_usage": max(self.performance_stats['memory_usage']) if self.performance_stats['memory_usage'] else 0,
-                "unified_frequency": TARGET_FREQUENCY,
-                "format_version": "v2.1_standard"
-            },
-            "quality_metrics": [asdict(qm) for qm in self.quality_metrics],
-            "performance_stats": self.performance_stats,
-            "conversion_issues": self.conversion_issues,
-            "timestamp": datetime.now().isoformat()
-        }
-
-        # 保存报告
-        report_path = self.output_dir / "quality_report.json"
-        with open(report_path, 'w', encoding='utf-8') as f:
-            json.dump(report_data, f, indent=2, ensure_ascii=False)
-
-        print(f"  质量报告已保存: {report_path}")
-
-        return report_data
 
     def convert_separated(self):
         """⭐ 优化版本：单次读取文件，分别处理视频、action、state，再拼接（适用于大文件）"""
-        print("开始LeRobot v2.1标准格式转换（优化版-单次读取）...")
         start_time = datetime.now()
         
         try:
-            # 1. 加载topic配置
-            self.load_topic_configs_from_excel()
+            # 1. 加载topic配置（统一自动从MCAP探测）
+            self.discover_topic_configs_from_mcap()
             
-            # 2. ⭐ 优化：单次读取文件，同时完成数据收集和文件分析
-            print("\n" + "="*80)
-            print("步骤1: 单次读取文件，同时完成数据收集和文件分析")
-            print("="*80)
+            # 2. 优化：单次读取文件，同时完成数据收集和文件分析
+            
             (video_data, video_timestamps, action_data, state_data, 
              video_frame_count, file_start_time, file_end_time, duration, topic_counts) = self._read_and_separate_data()
+            scan_start_time = start_time
             
             # 3. 分离处理：先处理视频
-            print("\n" + "="*80)
-            print("步骤2: 处理视频数据（基于时间戳对齐）")
-            print("="*80)
-            # ⭐ 关键修复：基于最小帧数摄像头的时间戳对齐所有视频
+            
+            # 关键修复：基于最小帧数摄像头的时间戳对齐所有视频
             video_info = self._create_videos_from_data(video_data, video_timestamps, video_frame_count)
             del video_data
             gc.collect()
             
             # 4. 分离处理：处理action数据
-            print("\n" + "="*80)
-            print("步骤3: 处理Action数据（主臂关节）")
-            print("="*80)
+
             action_data_interpolated = self._interpolate_action_data(action_data, video_frame_count, file_start_time, file_end_time)
             del action_data
             gc.collect()
             
             # 5. 分离处理：处理state数据
-            print("\n" + "="*80)
-            print("步骤4: 处理State数据（从臂关节、夹爪等）")
-            print("="*80)
+            
             state_data_interpolated = self._interpolate_state_data(state_data, video_frame_count, file_start_time, file_end_time)
             del state_data
             gc.collect()
             
             # 7. 拼接数据
-            print("\n" + "="*80)
-            print("步骤5: 拼接数据为LeRobot格式")
-            print("="*80)
+            
             df = self._merge_separated_data(action_data_interpolated, state_data_interpolated, video_frame_count)
             
             # 8. 评估数据质量（需要设置synchronized_data）
@@ -3170,14 +3071,14 @@ class MCAPToLeRobotV21StandardConverter:
             # 9. 生成元数据文件
             self.generate_meta_files(df, video_info)
             
-            # 10. 绘制曲线图（需要synchronized_data，已在上面设置）
-            self.plot_arm_curves()
+            # 10. 绘制曲线图（可选）
+            if not getattr(self, 'no_plot', False):
+                self.plot_arm_curves()
             
-            # 11. 生成质量报告
-            report_data = self.generate_quality_report()
+
             
             end_time = datetime.now()
-            processing_time = (end_time - start_time).total_seconds()
+            processing_time = (end_time - scan_start_time).total_seconds()
             
             print(f"\n转换完成! 耗时: {processing_time:.2f} 秒")
             print(f"输出目录: {self.output_dir}")
@@ -3203,9 +3104,9 @@ class MCAPToLeRobotV21StandardConverter:
         print("\n⭐ 单次读取文件，同时完成数据收集和文件分析...")
         
         camera_topics = {
-            "/camera_head/color/image_raw/compressed": "head_camera",
-            "/camera_left/color/image_raw/compressed": "left_hand_camera",
-            "/camera_right/color/image_raw/compressed": "right_hand_camera"
+            "/camera_head/color/image_raw/compressed": "camera_head_rgb",
+            "/camera_left/color/image_raw/compressed": "camera_left_wrist_rgb",
+            "/camera_right/color/image_raw/compressed": "camera_right_wrist_rgb"
         }
         
         action_topics = [
@@ -3375,9 +3276,9 @@ class MCAPToLeRobotV21StandardConverter:
         print("\n创建视频文件（基于时间戳对齐）...")
         
         camera_mapping = {
-            "/camera_head/color/image_raw/compressed": "head_camera",
-            "/camera_left/color/image_raw/compressed": "left_hand_camera",
-            "/camera_right/color/image_raw/compressed": "right_hand_camera"
+            "/camera_head/color/image_raw/compressed": "camera_head_rgb",
+            "/camera_left/color/image_raw/compressed": "camera_left_wrist_rgb",
+            "/camera_right/color/image_raw/compressed": "camera_right_wrist_rgb"
         }
         
         # 1. 找到最小帧数的摄像头作为基准
@@ -3405,12 +3306,12 @@ class MCAPToLeRobotV21StandardConverter:
             images = video_data[topic_name]
             timestamps = np.array(video_timestamps[topic_name])
             
-            print(f"  处理 {camera_name} 视频...")
+            
             
             if topic_name == min_frame_topic:
                 # 基准摄像头：直接使用
                 aligned_images = images
-                print(f"    {camera_name}: 基准摄像头，使用 {len(aligned_images)} 帧")
+                
             else:
                 # 其他摄像头：基于时间戳对齐到基准摄像头
                 original_count = len(images)
@@ -3421,7 +3322,7 @@ class MCAPToLeRobotV21StandardConverter:
                     idx = indices_left if indices_left < indices_right else indices_right
                     idx = np.clip(idx, 0, len(images) - 1)
                     aligned_images.append(images[idx])
-                print(f"    {camera_name}: 从 {original_count} 帧对齐到 {len(aligned_images)} 帧（基于时间戳）")
+                
             
             # 确保对齐后的帧数等于基准帧数
             if len(aligned_images) != video_frame_count:
@@ -3519,7 +3420,7 @@ class MCAPToLeRobotV21StandardConverter:
     
     def _interpolate_action_data(self, action_data_with_ts, frame_count, start_time, end_time):
         """插值action数据到30Hz"""
-        print("\n插值Action数据到30Hz...")
+
         action_data, action_timestamps = action_data_with_ts
         # ⭐ 修复：使用与统一处理模式相同的时间戳生成方式
         # 统一处理模式使用: np.arange(max_frames) / TARGET_FREQUENCY
@@ -3529,7 +3430,7 @@ class MCAPToLeRobotV21StandardConverter:
         action_data_interpolated = {}
         for topic_name in action_data.keys():
             if action_data[topic_name]:
-                print(f"  插值 {topic_name}: {len(action_data[topic_name])} 条 -> {frame_count} 帧...")
+
                 interpolated = self._interpolate_batch_data(
                     action_data[topic_name],
                     np.array(action_timestamps[topic_name]),
@@ -3537,12 +3438,12 @@ class MCAPToLeRobotV21StandardConverter:
                 )
                 action_data_interpolated[topic_name] = interpolated
         
-        print(f"  Action数据插值完成，共 {len(action_data_interpolated)} 个topics")
+
         return action_data_interpolated
     
     def _interpolate_state_data(self, state_data_with_ts, frame_count, start_time, end_time):
         """插值state数据到30Hz"""
-        print("\n插值State数据到30Hz...")
+
         state_data, state_timestamps = state_data_with_ts
         # ⭐ 修复：使用与统一处理模式相同的时间戳生成方式
         # 统一处理模式使用: np.arange(max_frames) / TARGET_FREQUENCY
@@ -3552,7 +3453,7 @@ class MCAPToLeRobotV21StandardConverter:
         state_data_interpolated = {}
         for topic_name in state_data.keys():
             if state_data[topic_name]:
-                print(f"  插值 {topic_name}: {len(state_data[topic_name])} 条 -> {frame_count} 帧...")
+
                 interpolated = self._interpolate_batch_data(
                     state_data[topic_name],
                     np.array(state_timestamps[topic_name]),
@@ -3560,7 +3461,7 @@ class MCAPToLeRobotV21StandardConverter:
                 )
                 state_data_interpolated[topic_name] = interpolated
         
-        print(f"  State数据插值完成，共 {len(state_data_interpolated)} 个topics")
+
         return state_data_interpolated
     
     def _merge_separated_data(self, action_data, state_data, frame_count):
@@ -3973,8 +3874,8 @@ class MCAPToLeRobotV21StandardConverter:
         start_time = datetime.now()
 
         try:
-            # 1. 加载topic配置
-            self.load_topic_configs_from_excel()
+            # 1. 加载topic配置（统一自动从MCAP探测）
+            self.discover_topic_configs_from_mcap()
 
             # 2. 分析MCAP文件
             file_start_time, file_end_time, duration, topic_counts = self.analyze_mcap_file_for_duration()
@@ -3993,9 +3894,6 @@ class MCAPToLeRobotV21StandardConverter:
 
             # 7. 绘制曲线图
             self.plot_arm_curves()
-
-            # 8. 生成质量报告
-            report_data = self.generate_quality_report()
 
             end_time = datetime.now()
             processing_time = (end_time - start_time).total_seconds()
@@ -4058,63 +3956,118 @@ class MCAPToLeRobotV21StandardConverter:
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='MCAP到LeRobot v2.1标准格式转换器 (Linux服务器优化版-统一30Hz)')
-    parser.add_argument('--input', required=True, help='输入MCAP文件路径')
+    parser.add_argument('--input', required=True, help='输入MCAP文件或目录路径')
     parser.add_argument('--output', required=True, help='输出目录路径')
-    parser.add_argument('--excel-config', default=None, help='Excel配置文件路径。不提供则自动从MCAP探测Topic。')
-    parser.add_argument('--no-excel', action='store_true', help='忽略Excel，直接从MCAP探测Topic。')
+    # Excel 配置相关参数已移除
     parser.add_argument('--max-duration', type=int, default=0, help='最大处理时长（秒），0表示不限制，处理完整文件')
     parser.add_argument('--resolution', choices=['360p', '720p'], default='720p', help='目标分辨率：360p (640x360) 或 720p (1280x720)，默认720p')
+    parser.add_argument('--no-plot', action='store_true', help='不生成臂与夹爪曲线图')
+    parser.add_argument('--threads', type=int, default=None, help='处理线程数（覆盖默认的半核策略）')
+    parser.add_argument('--ffmpeg-threads', type=int, default=None, help='AV1转码线程数（覆盖自动CPU核心数）')
+    parser.add_argument('--ffmpeg-cpu-used', type=int, default=None, help='AV1编码速度参数cpu-used（默认8，越大越快）')
 
     args = parser.parse_args()
 
     # 归一化路径：将反斜杠转为正斜杠，并解析为绝对路径
     input_path = Path(str(args.input).replace('\\', '/')).resolve()
     output_dir = Path(str(args.output).replace('\\', '/')).resolve()
-    print(f"[Paths] Input: {input_path.as_posix()}")
-    print(f"[Paths] Output: {output_dir.as_posix()}")
+    # print(f"[Paths] Input: {input_path.as_posix()}")
+    # print(f"[Paths] Output: {output_dir.as_posix()}")
 
     # 检查输入文件
     if not input_path.exists():
-        print(f"错误: 输入文件不存在: {input_path.as_posix()}")
+        print(f"错误: 输入路径不存在: {input_path.as_posix()}")
         sys.exit(1)
 
-    # 选择 Excel 配置
-    excel_path = None if args.no_excel else (args.excel_config if args.excel_config else "mcap_topic.xlsx")
-    if excel_path:
-        excel_path = Path(str(excel_path).replace('\\', '/')).resolve()
-        print(f"[Paths] Excel: {excel_path.as_posix()}")
+    # 若为目录，最开始进行扫描并报告mcap数量
+    mcap_files = None
+    if input_path.is_dir():
+        mcap_files = [p for p in input_path.rglob("*") if p.is_file() and p.suffix.lower() == ".mcap"]
+        print(f"[Scan] 在目录中发现 {len(mcap_files)} 个MCAP文件: {input_path.as_posix()}")
+        if not mcap_files:
+            print(f"错误: 在目录中未找到mcap文件: {input_path.as_posix()}")
+            sys.exit(1)
+
+    # 不再支持 Excel 配置，统一从 MCAP 自动探测
+
+    if args.threads is not None and args.threads > 0:
+        os.environ['OPENBLAS_NUM_THREADS'] = str(args.threads)
+        os.environ['MKL_NUM_THREADS'] = str(args.threads)
+        os.environ['NUMEXPR_NUM_THREADS'] = str(args.threads)
+        os.environ['OMP_NUM_THREADS'] = str(args.threads)
+        try:
+            cv2.setNumThreads(args.threads)
+        except Exception:
+            pass
+        print(f"[Perf] 处理线程数覆盖为: {args.threads}")
+
+    if args.ffmpeg_threads is not None and args.ffmpeg_threads > 0:
+        os.environ['FFMPEG_THREADS'] = str(args.ffmpeg_threads)
+        print(f"[Perf] FFmpeg转码线程数覆盖为: {args.ffmpeg_threads}")
+
+    if args.ffmpeg_cpu_used is not None and args.ffmpeg_cpu_used >= 0:
+        os.environ['FFMPEG_CPU_USED'] = str(args.ffmpeg_cpu_used)
+        print(f"[Perf] FFmpeg cpu-used 覆盖为: {args.ffmpeg_cpu_used}")
+
+    if input_path.is_file():
+        converter = MCAPToLeRobotV21StandardConverter(
+            str(input_path),
+            str(output_dir),
+            max_duration=args.max_duration,
+            resolution=args.resolution
+        )
+        converter.no_plot = args.no_plot
+        report = converter.convert_separated()
+        print("\n转换总结:")
+        print(f"- 处理了 {len(report.quality_metrics)} 个topics")
+        converter.validate_training_readiness()
+        print(f"- 生成了 {report.converted_frames} 帧数据")
+        print(f"- 整体质量评分: {report.overall_quality_score:.3f}")
+        print(f"- 统一采样频率: {TARGET_FREQUENCY} Hz")
+        print(f"- 格式版本: LeRobot v2.1 标准")
+        if report.overall_quality_score >= 0.8:
+            print("✅ 数据质量优秀，可直接用于训练!")
+        elif report.overall_quality_score >= 0.6:
+            print("⚠️  数据质量良好，建议检查部分topic")
+        else:
+            print("❌ 数据质量较差，建议重新采集")
+    elif input_path.is_dir():
+        print(f"发现 {len(mcap_files)} 个MCAP文件")
+        for p in tqdm(mcap_files, desc="转换MCAP", unit="file"):
+            rel = p.relative_to(input_path)
+            sub_output = output_dir / rel.parent / p.stem
+            sub_output.mkdir(parents=True, exist_ok=True)
+            # print(f"\n[批量转换] {p.as_posix()} -> {sub_output.as_posix()}")
+            converter = MCAPToLeRobotV21StandardConverter(
+                str(p),
+                str(sub_output),
+                max_duration=args.max_duration,
+                resolution=args.resolution
+            )
+            converter.no_plot = args.no_plot
+            print("使用分离处理模式（先分别处理视频、action、state，再拼接）...")
+            try:
+                report = converter.convert_separated()
+                print("\n转换总结:")
+                print(f"- 处理了 {len(report.quality_metrics)} 个topics")
+                converter.validate_training_readiness()
+                print(f"- 生成了 {report.converted_frames} 帧数据")
+                print(f"- 整体质量评分: {report.overall_quality_score:.3f}")
+                print(f"- 统一采样频率: {TARGET_FREQUENCY} Hz")
+                print(f"- 格式版本: LeRobot v2.1 标准")
+                if report.overall_quality_score >= 0.8:
+                    print("✅ 数据质量优秀，可直接用于训练!")
+                elif report.overall_quality_score >= 0.6:
+                    print("⚠️  数据质量良好，建议检查部分topic")
+                else:
+                    print("❌ 数据质量较差，建议重新采集")
+            except Exception as e:
+                print(f"文件转换失败: {p} -> {e}")
+                continue
+        print("\n批量转换完成")
     else:
-        print(f"[Paths] Excel: None")
-
-    # 创建转换器并执行转换
-    converter = MCAPToLeRobotV21StandardConverter(
-        str(input_path),
-        str(output_dir),
-        excel_config_path=str(excel_path) if excel_path else None,
-        max_duration=args.max_duration,
-        resolution=args.resolution
-    )
-    
-    # 始终使用分离处理模式（优化内存使用，适用于所有文件）
-    print("使用分离处理模式（先分别处理视频、action、state，再拼接）...")
-    report = converter.convert_separated()
-
-    print("\n转换总结:")
-    print(f"- 处理了 {len(report.quality_metrics)} 个topics")
-    
-    # 验证训练就绪性
-    converter.validate_training_readiness()
-    print(f"- 生成了 {report.converted_frames} 帧数据")
-    print(f"- 整体质量评分: {report.overall_quality_score:.3f}")
-    print(f"- 统一采样频率: {TARGET_FREQUENCY} Hz")
-    print(f"- 格式版本: LeRobot v2.1 标准")
-
-    if report.overall_quality_score >= 0.8:
-        print("✅ 数据质量优秀，可直接用于训练!")
-    elif report.overall_quality_score >= 0.6:
-        print("⚠️  数据质量良好，建议检查部分topic")
-    else:
-        print("❌ 数据质量较差，建议重新采集")
+        print(f"错误: 无效的输入路径: {input_path.as_posix()}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

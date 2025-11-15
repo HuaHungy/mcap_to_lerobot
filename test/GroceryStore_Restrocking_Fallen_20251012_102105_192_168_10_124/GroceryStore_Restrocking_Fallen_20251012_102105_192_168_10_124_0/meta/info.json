@@ -1,0 +1,214 @@
+{
+  "codebase_version": "v2.1",
+  "robot_type": "rm_follower",
+  "total_episodes": 1,
+  "total_frames": 2802,
+  "total_tasks": 1,
+  "total_videos": 3,
+  "total_chunks": 1,
+  "chunks_size": 1000,
+  "fps": 30,
+  "splits": {
+    "train": "0:1"
+  },
+  "data_path": "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet",
+  "video_path": "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4",
+  "features": {
+    "action": {
+      "dtype": "float32",
+      "shape": [
+        17
+      ],
+      "names": [
+        "LeftLeaderArm_Joint1.pos",
+        "LeftLeaderArm_Joint2.pos",
+        "LeftLeaderArm_Joint3.pos",
+        "LeftLeaderArm_Joint4.pos",
+        "LeftLeaderArm_Joint5.pos",
+        "LeftLeaderArm_Joint6.pos",
+        "LeftLeaderArm_Joint7.pos",
+        "LeftGripper.pos",
+        "RightLeaderArm_Joint1.pos",
+        "RightLeaderArm_Joint2.pos",
+        "RightLeaderArm_Joint3.pos",
+        "RightLeaderArm_Joint4.pos",
+        "RightLeaderArm_Joint5.pos",
+        "RightLeaderArm_Joint6.pos",
+        "RightLeaderArm_Joint7.pos",
+        "RightGripper.pos",
+        "Lift.command"
+      ]
+    },
+    "observation.state": {
+      "dtype": "float32",
+      "shape": [
+        57
+      ],
+      "names": [
+        "LeftFollowerArm_Joint1.pos",
+        "LeftFollowerArm_Joint2.pos",
+        "LeftFollowerArm_Joint3.pos",
+        "LeftFollowerArm_Joint4.pos",
+        "LeftFollowerArm_Joint5.pos",
+        "LeftFollowerArm_Joint6.pos",
+        "LeftFollowerArm_Joint7.pos",
+        "LeftGripper.pos",
+        "RightFollowerArm_Joint1.pos",
+        "RightFollowerArm_Joint2.pos",
+        "RightFollowerArm_Joint3.pos",
+        "RightFollowerArm_Joint4.pos",
+        "RightFollowerArm_Joint5.pos",
+        "RightFollowerArm_Joint6.pos",
+        "RightFollowerArm_Joint7.pos",
+        "RightGripper.pos",
+        "Lift.position",
+        "LeftForce.fx",
+        "LeftForce.fy",
+        "LeftForce.fz",
+        "LeftForce.mx",
+        "LeftForce.my",
+        "LeftForce.mz",
+        "RightForce.fx",
+        "RightForce.fy",
+        "RightForce.fz",
+        "RightForce.mx",
+        "RightForce.my",
+        "RightForce.mz",
+        "LeftJoint_Vel1",
+        "LeftJoint_Vel2",
+        "LeftJoint_Vel3",
+        "LeftJoint_Vel4",
+        "LeftJoint_Vel5",
+        "LeftJoint_Vel6",
+        "LeftJoint_Vel7",
+        "RightJoint_Vel1",
+        "RightJoint_Vel2",
+        "RightJoint_Vel3",
+        "RightJoint_Vel4",
+        "RightJoint_Vel5",
+        "RightJoint_Vel6",
+        "RightJoint_Vel7",
+        "LeftEnd_X",
+        "LeftEnd_Y",
+        "LeftEnd_Z",
+        "LeftEnd_Qw",
+        "LeftEnd_Qx",
+        "LeftEnd_Qy",
+        "LeftEnd_Qz",
+        "RightEnd_X",
+        "RightEnd_Y",
+        "RightEnd_Z",
+        "RightEnd_Qw",
+        "RightEnd_Qx",
+        "RightEnd_Qy",
+        "RightEnd_Qz"
+      ]
+    },
+    "observation.images.camera_head_rgb": {
+      "dtype": "video",
+      "shape": [
+        720,
+        1280,
+        3
+      ],
+      "names": [
+        "height",
+        "width",
+        "channels"
+      ],
+      "info": {
+        "video.height": 720,
+        "video.width": 1280,
+        "video.codec": "av1",
+        "video.pix_fmt": "yuv420p",
+        "video.is_depth_map": false,
+        "video.fps": 30,
+        "video.channels": 3,
+        "has_audio": false
+      }
+    },
+    "observation.images.camera_left_wrist_rgb": {
+      "dtype": "video",
+      "shape": [
+        720,
+        1280,
+        3
+      ],
+      "names": [
+        "height",
+        "width",
+        "channels"
+      ],
+      "info": {
+        "video.height": 720,
+        "video.width": 1280,
+        "video.codec": "av1",
+        "video.pix_fmt": "yuv420p",
+        "video.is_depth_map": false,
+        "video.fps": 30,
+        "video.channels": 3,
+        "has_audio": false
+      }
+    },
+    "observation.images.camera_right_wrist_rgb": {
+      "dtype": "video",
+      "shape": [
+        720,
+        1280,
+        3
+      ],
+      "names": [
+        "height",
+        "width",
+        "channels"
+      ],
+      "info": {
+        "video.height": 720,
+        "video.width": 1280,
+        "video.codec": "av1",
+        "video.pix_fmt": "yuv420p",
+        "video.is_depth_map": false,
+        "video.fps": 30,
+        "video.channels": 3,
+        "has_audio": false
+      }
+    },
+    "timestamp": {
+      "dtype": "float32",
+      "shape": [
+        1
+      ],
+      "names": null
+    },
+    "frame_index": {
+      "dtype": "int64",
+      "shape": [
+        1
+      ],
+      "names": null
+    },
+    "episode_index": {
+      "dtype": "int64",
+      "shape": [
+        1
+      ],
+      "names": null
+    },
+    "index": {
+      "dtype": "int64",
+      "shape": [
+        1
+      ],
+      "names": null
+    },
+    "task_index": {
+      "dtype": "int64",
+      "shape": [
+        1
+      ],
+      "names": null
+    }
+  },
+  "created_at": "2025-11-15T23:14:30.415919",
+  "processing_notes": "LeRobot v2.1 training-ready - RM compatible - unified 30Hz - processed 0s of data"
+}
